@@ -1,0 +1,117 @@
+<html>
+<head>
+<title>Skymap</title>
+<style>
+body {
+  background: #fcfcfa;
+}
+.stroke {
+  fill: none;
+  stroke: #000;
+  stroke-width: 3px;
+}
+.fill {
+  fill: #fff;
+}
+.graticule {
+  fill: none;
+  stroke: #777;
+  stroke-dasharray: 1,6;
+}
+.boundary {
+  fill: none;
+  stroke: #fff;
+  stroke-width: .5px;
+}
+.equator {
+  fill: none;
+  stroke: #666;
+  stroke-width: 1;
+}
+.hese {
+  fill: #c33;
+}
+.hese_shower {
+  stroke-width: 1.5;
+  stroke: #fff;
+}
+</style>
+</head>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
+<script src=""></script>
+<script>
+var hese = [
+    {dec: -1.8, ra: 35.2, mae: 16.3, type:"shower"},
+    {dec: -28.0, ra: 282.6, mae: 25.4, type:"shower"}
+];
+
+var width = 960,
+    height = 500;
+var coords, coords2;
+var projection = d3.geoMollweide()
+    .scale(165)
+    .translate([width / 2, height / 2])
+    .precision(.1);
+var path = d3.geoPath()
+    .projection(projection);
+var graticule = d3.geoGraticule()
+        .step([30, 30]);
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+svg.append("defs").append("path")
+    .datum({type: "Sphere"})
+    .attr("id", "sphere")
+    .attr("d", path);
+svg.append("use")
+    .attr("class", "stroke")
+    .attr("xlink:href", "#sphere");
+svg.append("use")
+    .attr("class", "fill")
+    .attr("xlink:href", "#sphere");
+svg.append("path")
+    .datum(graticule)
+    .attr("class", "graticule")
+    .attr("d", path);
+// make equator
+coords = projection([-180, 0]);
+coords2 = projection([180, 0]);
+svg.append("line")
+    .attr("class", "equator")
+    .attr("x1", coords[0])
+    .attr("y1", coords[1])
+    .attr("x2", coords2[0])
+    .attr("y2", coords2[1]);
+/*var line = d3.svg.line()
+    .interpolate("cardinal-closed")
+    .x(function(d) { return projection(d)[0]; })
+    .y(function(d) { return projection(d)[1]; });
+svg.append("path")
+    .data([points])
+    .attr("d", line)
+    .attr('class', 'journey');*/
+
+for (var i=0;i<hese.length;i++) {
+  coords = projection([hese[i].ra, hese[i].dec]);
+  svg.append("circle")
+    .attr("class", "hese")
+    .attr("cx", coords[0])
+    .attr("cy", coords[1])
+    .attr("r", 4);
+    svg.append("line")
+    .attr("class", "hese_"+hese[i].type)
+    .attr("x1", coords[0]-2.5)
+    .attr("y1", coords[1]-2.5)
+    .attr("x2", coords[0]+2.5)
+    .attr("y2", coords[1]+2.5);
+    svg.append("line")
+    .attr("class", "hese_"+hese[i].type)
+    .attr("x1", coords[0]-2.5)
+    .attr("y1", coords[1]+2.5)
+    .attr("x2", coords[0]+2.5)
+    .attr("y2", coords[1]-2.5);
+}
+</script>
+</body>
