@@ -94,7 +94,7 @@ svg.append("path")
     .attr('class', 'journey');*/
 
 for (var i=0;i<hese.length;i++) {
-  coords = projection([hese[i].ra, hese[i].dec]);
+  coords = projection([(hese[i].ra+180)*-1, hese[i].dec]);
   svg.append("circle")
     .attr("class", "hese")
     .attr("cx", coords[0])
