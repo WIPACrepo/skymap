@@ -1,5 +1,8 @@
+<!-- An example skymap of the first few HESE events -->
+<!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
 <title>Skymap</title>
 <style>
 body {
@@ -28,90 +31,215 @@ body {
   stroke: #666;
   stroke-width: 1;
 }
+.galactic_plane {
+  fill: none;
+  stroke: #666;
+  stroke-width: 1;
+}
 .hese {
   fill: #c33;
 }
-.hese_shower {
+.hese_line {
   stroke-width: 1.5;
   stroke: #fff;
+}
+.hese_err {
+  fill: none;
+  stroke-width: 1.5;
+  stroke: #f66;
+}
+.hese_label {
+  text-size: 8pt;
+}
+.black {
+  fill: #000;
 }
 </style>
 </head>
 <body>
-<script src="https://d3js.org/d3.v4.min.js"></script>
-<script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
-<script src=""></script>
+<script src="d3.v4.min.js"></script>
+<script src="d3-geo-projection.v2.min.js"></script>
+<script src="astro.js"></script>
+<script src="astro.constants.js"></script>
+<script src="astro.coordinates.js"></script>
 <script>
-var hese = [
-    {dec: -1.8, ra: 35.2, mae: 16.3, type:"shower"},
-    {dec: -28.0, ra: 282.6, mae: 25.4, type:"shower"}
-];
-
-var width = 960,
-    height = 500;
-var coords, coords2;
-var projection = d3.geoMollweide()
-    .scale(165)
-    .translate([width / 2, height / 2])
-    .precision(.1);
-var path = d3.geoPath()
-    .projection(projection);
-var graticule = d3.geoGraticule()
-        .step([30, 30]);
-var svg = d3.select("body").append("svg")
-    .attr("width", width)
-    .attr("height", height);
-svg.append("defs").append("path")
-    .datum({type: "Sphere"})
-    .attr("id", "sphere")
-    .attr("d", path);
-svg.append("use")
-    .attr("class", "stroke")
-    .attr("xlink:href", "#sphere");
-svg.append("use")
-    .attr("class", "fill")
-    .attr("xlink:href", "#sphere");
-svg.append("path")
-    .datum(graticule)
-    .attr("class", "graticule")
-    .attr("d", path);
-// make equator
-coords = projection([-180, 0]);
-coords2 = projection([180, 0]);
-svg.append("line")
-    .attr("class", "equator")
-    .attr("x1", coords[0])
-    .attr("y1", coords[1])
-    .attr("x2", coords2[0])
-    .attr("y2", coords2[1]);
-/*var line = d3.svg.line()
-    .interpolate("cardinal-closed")
-    .x(function(d) { return projection(d)[0]; })
-    .y(function(d) { return projection(d)[1]; });
-svg.append("path")
-    .data([points])
-    .attr("d", line)
-    .attr('class', 'journey');*/
-
-for (var i=0;i<hese.length;i++) {
-  coords = projection([(hese[i].ra+180)*-1, hese[i].dec]);
-  svg.append("circle")
-    .attr("class", "hese")
-    .attr("cx", coords[0])
-    .attr("cy", coords[1])
-    .attr("r", 4);
-    svg.append("line")
-    .attr("class", "hese_"+hese[i].type)
-    .attr("x1", coords[0]-2.5)
-    .attr("y1", coords[1]-2.5)
-    .attr("x2", coords[0]+2.5)
-    .attr("y2", coords[1]+2.5);
-    svg.append("line")
-    .attr("class", "hese_"+hese[i].type)
-    .attr("x1", coords[0]-2.5)
-    .attr("y1", coords[1]+2.5)
-    .attr("x2", coords[0]+2.5)
-    .attr("y2", coords[1]-2.5);
+function toDegrees(angle) {
+  return angle * (180 / Math.PI);
 }
+function toRadians(angle) {
+  return angle * (Math.PI / 180);
+}
+
+var types = {
+  shower: function(svg, coords, radius){
+    var c = radius;
+    svg.append("line")
+      .attr("class", "hese_line track")
+      .attr("x1", coords[0]-c)
+      .attr("y1", coords[1])
+      .attr("x2", coords[0]+c)
+      .attr("y2", coords[1]);
+    svg.append("line")
+      .attr("class", "hese_line track")
+      .attr("x1", coords[0])
+      .attr("y1", coords[1]-c)
+      .attr("x2", coords[0])
+      .attr("y2", coords[1]+c);
+  },
+  track: function(svg, coords, radius){
+    var c = Math.sqrt(radius*radius*2)/2;
+    svg.append("line")
+      .attr("class", "hese_line track")
+      .attr("x1", coords[0]-c)
+      .attr("y1", coords[1]-c)
+      .attr("x2", coords[0]+c)
+      .attr("y2", coords[1]+c);
+    svg.append("line")
+      .attr("class", "hese_line track")
+      .attr("x1", coords[0]-c)
+      .attr("y1", coords[1]+c)
+      .attr("x2", coords[0]+c)
+      .attr("y2", coords[1]-c);
+  }
+};
+
+var draw = function(svg, projection){
+  var line = d3.line()
+    .curve(d3.curveCardinal)
+    .defined(function(d){
+      if (d[0] < 0.2 || d[0] > 359.8)
+        return null;
+      if (d[1] < -90 || d[1] > 90)
+        return null;
+      return d;
+    })
+    .x(function(d){ return projection(d)[0]; })
+    .y(function(d){ return projection(d)[1]; });
+  var wrap_coords = function(coords) {
+    while (coords[1] < -90 || coords[1] > 90) {
+      if (coords[1] > 90)
+        coords[1] = 180 - coords[1];
+      else
+        coords[1] = -180 - coords[1];
+      coords[0] += 180;
+    }
+    while (coords[0] < -1) { coords[0] += 360; }
+    while (coords[0] > 361) { coords[0] -= 360; }
+    return coords;
+  }
+  return {
+    circle: function(coords, radius, classname, wrap){
+      wrap = (typeof wrap !== 'undefined') ? wrap : true;
+      console.log(coords);
+      var data = [];
+      for(var i=0;i<2*Math.PI+.1;i+=Math.PI/500) {
+        var tmp = [coords[0] + radius * Math.cos(i),
+                   coords[1] + radius * Math.sin(i)];
+        if (wrap)
+          tmp = wrap_coords(tmp);
+        data.push(tmp);
+        /*svg.append("circle")
+          .attr("class", "black")
+          .attr("cx", projection(tmp)[0])
+          .attr("cy", projection(tmp)[1])
+          .attr("r", 2);*/
+      }
+
+      var path = svg.append("path")
+        .datum(data)
+        .attr("d", line);
+      if (classname != undefined && classname != null)
+        path.attr("class", classname);
+    }
+  }
+};
+
+astrojs.ready(function(e){
+
+  var hese = [
+    {dec: -1.8, ra: 35.2, err: 16.3, type: types.shower},
+    {dec: -28.0, ra: 282.6, err: 25.4, type: types.shower},
+    {dec: -31.2, ra: 127.9, err: 1.4, type: types.track}
+  ];
+
+  var width = 960,
+      height = 500;
+  var coords, coords2;
+  var projection = d3.geoMollweide()
+      .scale(165)
+      .translate([width / 2, height / 2])
+      .precision(.1);
+  var project = function(d) {
+    return projection([(d[0]-180)*-1,d[1]]);
+  };
+  var path = d3.geoPath()
+      .projection(projection);
+  var graticule = d3.geoGraticule()
+          .step([30, 30]);
+  var svg = d3.select("body").append("svg")
+      .attr("width", width)
+      .attr("height", height);
+  svg.append("defs").append("path")
+      .datum({type: "Sphere"})
+      .attr("id", "sphere")
+      .attr("d", path);
+  svg.append("use")
+      .attr("class", "stroke")
+      .attr("xlink:href", "#sphere");
+  svg.append("use")
+      .attr("class", "fill")
+      .attr("xlink:href", "#sphere");
+  svg.append("path")
+      .datum(graticule)
+      .attr("class", "graticule")
+      .attr("d", path);
+  // make equator
+  coords = project([0, 0]);
+  coords2 = project([360, 0]);
+  svg.append("line")
+      .attr("class", "equator")
+      .attr("x1", coords[0])
+      .attr("y1", coords[1])
+      .attr("x2", coords2[0])
+      .attr("y2", coords2[1]);
+  var plane_data = [];
+  for(var i=-180;i<180;i+=.1) {
+    var tmp = astrojs.coordinates.galactic2equatorial(i,0);
+    plane_data.push([tmp.ra, tmp.dec]);
+  }  
+  var line = d3.line()
+    .curve(d3.curveCardinal)
+    .defined(function(d){
+      if (d[0] < 0.1 || d[0] > 359.9)
+        return null;
+      if (d[1] < -90 || d[1] > 90)
+        return null;
+      return d;
+    })
+    .x(function(d){ return project(d)[0]; })
+    .y(function(d){ return project(d)[1]; });
+  svg.append("path")
+    .attr("class", "galactic_plane")
+    .datum(plane_data)
+    .attr("d", line);
+
+  for (var i=0;i<hese.length;i++) {
+    coords = project([hese[i].ra, hese[i].dec]);
+    svg.append("circle")
+      .attr("class", "hese")
+      .attr("cx", coords[0])
+      .attr("cy", coords[1])
+      .attr("r", 5);
+    if (hese[i].type != undefined && hese[i].type != null) {
+      hese[i].type(svg, coords, 5);
+    }
+    svg.append("text")
+      .attr("class", "hese_label")
+      .attr("x", coords[0]+5)
+      .attr("y", coords[1]-5)
+      .text(""+(i+1));
+    draw(svg,project).circle([hese[i].ra, hese[i].dec], hese[i].err, "hese_err");
+  }
+});
 </script>
 </body>
