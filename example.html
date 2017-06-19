@@ -8,52 +8,6 @@
 body {
   background: #fcfcfa;
 }
-.stroke {
-  fill: none;
-  stroke: #000;
-  stroke-width: 3px;
-}
-.fill {
-  fill: #fff;
-}
-.graticule {
-  fill: none;
-  stroke: #777;
-  stroke-dasharray: 1,6;
-}
-.boundary {
-  fill: none;
-  stroke: #fff;
-  stroke-width: .5px;
-}
-.equator {
-  fill: none;
-  stroke: #666;
-  stroke-width: 1;
-}
-.galactic_plane {
-  fill: none;
-  stroke: #666;
-  stroke-width: 1;
-}
-.hese {
-  fill: #c33;
-}
-.hese_line {
-  stroke-width: 1.5;
-  stroke: #fff;
-}
-.hese_err {
-  fill: none;
-  stroke-width: 1.5;
-  stroke: #f66;
-}
-.hese_label {
-  text-size: 8pt;
-}
-.black {
-  fill: #000;
-}
 </style>
 </head>
 <body>
@@ -63,6 +17,30 @@ body {
 <script src="astro.constants.js"></script>
 <script src="astro.coordinates.js"></script>
 <script>
+// Object.assign polyfill
+if (typeof Object.assign != 'function') {
+  Object.assign = function(target, varArgs) { // .length of function is 2
+    'use strict';
+    if (target == null) { // TypeError if undefined or null
+      throw new TypeError('Cannot convert undefined or null to object');
+    }
+    var to = Object(target);
+    for (var index = 1; index < arguments.length; index++) {
+      var nextSource = arguments[index];
+      if (nextSource != null) { // Skip over if undefined or null
+        for (var nextKey in nextSource) {
+          // Avoid bugs when hasOwnProperty is shadowed
+          if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
+            to[nextKey] = nextSource[nextKey];
+          }
+        }
+      }
+    }
+    return to;
+  };
+}
+
+
 function toDegrees(angle) {
   return angle * (180 / Math.PI);
 }
@@ -70,41 +48,22 @@ function toRadians(angle) {
   return angle * (Math.PI / 180);
 }
 
-var types = {
-  shower: function(svg, coords, radius){
-    var c = radius;
-    svg.append("line")
-      .attr("class", "hese_line track")
-      .attr("x1", coords[0]-c)
-      .attr("y1", coords[1])
-      .attr("x2", coords[0]+c)
-      .attr("y2", coords[1]);
-    svg.append("line")
-      .attr("class", "hese_line track")
-      .attr("x1", coords[0])
-      .attr("y1", coords[1]-c)
-      .attr("x2", coords[0])
-      .attr("y2", coords[1]+c);
-  },
-  track: function(svg, coords, radius){
-    var c = Math.sqrt(radius*radius*2)/2;
-    svg.append("line")
-      .attr("class", "hese_line track")
-      .attr("x1", coords[0]-c)
-      .attr("y1", coords[1]-c)
-      .attr("x2", coords[0]+c)
-      .attr("y2", coords[1]+c);
-    svg.append("line")
-      .attr("class", "hese_line track")
-      .attr("x1", coords[0]-c)
-      .attr("y1", coords[1]+c)
-      .attr("x2", coords[0]+c)
-      .attr("y2", coords[1]-c);
-  }
-};
-
-var draw = function(svg, projection){
-  var line = d3.line()
+var reset_styles = function(context) {
+  context.lineWidth = 1;
+  context.strokeStyle = 'black';
+  context.setLineDash([]);
+  context.fillStyle = 'black';
+  context.font = '10px sans-serif';
+}
+var draw = function(context, projection){
+  var raw_curve = d3.line()
+    .context(context);
+  var curve = d3.line()
+    .curve(d3.curveCardinal)
+    .x(function(d){ return projection(d)[0]; })
+    .y(function(d){ return projection(d)[1]; })
+    .context(context);
+  var safe_curve = d3.line()
     .curve(d3.curveCardinal)
     .defined(function(d){
       if (d[0] < 0.2 || d[0] > 359.8)
@@ -114,7 +73,8 @@ var draw = function(svg, projection){
       return d;
     })
     .x(function(d){ return projection(d)[0]; })
-    .y(function(d){ return projection(d)[1]; });
+    .y(function(d){ return projection(d)[1]; })
+    .context(context);
   var wrap_coords = function(coords) {
     while (coords[1] < -90 || coords[1] > 90) {
       if (coords[1] > 90)
@@ -128,29 +88,125 @@ var draw = function(svg, projection){
     return coords;
   }
   return {
-    circle: function(coords, radius, classname, wrap){
-      wrap = (typeof wrap !== 'undefined') ? wrap : true;
-      console.log(coords);
+    text: function(params) {
+      params = Object.assign({
+        coords: [],
+        offset: [5, -5],
+        font: "10px sans-serif",
+        color: "black",
+        text: ""
+      }, params);
+      params.coords = projection(params.coords);
+      var x = params.coords[0]+params.offset[0];
+      var y = params.coords[1]+params.offset[1]
+
+      context.font = params.font;
+      context.fillStyle = params.color;
+      context.fillText(params.text, x, y);
+      reset_styles(context);
+    },
+    line: function(params) {
+      params = Object.assign({
+        coords: [],
+        project: true, // project the coordinates
+        wrap: true,
+        strokeStyle: "black",
+        lineWidth: 1
+      }, params);
+
+      context.beginPath();
+      if (!params.project)
+        raw_curve(params.coords);
+      else if (params.wrap)
+        safe_curve(params.coords);
+      else
+        curve(params.coords);
+      context.strokeStyle = params.strokeStyle;
+      context.lineWidth = params.lineWidth;
+      context.stroke();
+      reset_styles(context);
+    },
+    circle: function(params){
+      params = Object.assign({
+        coords: [],
+        radius: 1,
+        wrap: true,
+        raw: false, // just project the coords, not the bounding circle
+        fill: false,
+        stroke: true,
+        fillStyle: "black",
+        strokeStyle: "black",
+        lineWidth: 1
+      }, params);
+      if (params.raw)
+        params.coords = projection(params.coords);
       var data = [];
       for(var i=0;i<2*Math.PI+.1;i+=Math.PI/500) {
-        var tmp = [coords[0] + radius * Math.cos(i),
-                   coords[1] + radius * Math.sin(i)];
-        if (wrap)
+        var tmp = [params.coords[0] + params.radius * Math.cos(i),
+                   params.coords[1] + params.radius * Math.sin(i)];
+        if (params.wrap && !params.raw)
           tmp = wrap_coords(tmp);
         data.push(tmp);
-        /*svg.append("circle")
-          .attr("class", "black")
-          .attr("cx", projection(tmp)[0])
-          .attr("cy", projection(tmp)[1])
-          .attr("r", 2);*/
       }
 
-      var path = svg.append("path")
-        .datum(data)
-        .attr("d", line);
-      if (classname != undefined && classname != null)
-        path.attr("class", classname);
+      if (params.fill) {
+        context.beginPath();
+        if (params.raw)
+          raw_curve(data);
+        else if (params.wrap)
+          safe_curve(data);
+        else
+          curve(data);
+        context.fillStyle = params.fillStyle;
+        context.fill();
+      }
+      if (params.stroke) {
+        context.beginPath();
+        if (params.raw)
+          raw_curve(data);
+        else if (params.wrap)
+          safe_curve(data);
+        else
+          curve(data);
+        context.strokeStyle = params.strokeStyle;
+        context.lineWidth = params.lineWidth;
+        context.stroke();
+      }
+      reset_styles(context);
     }
+  }
+};
+
+var types = {
+  shower: function(draw, coords, radius){
+    var c = radius;
+    draw.line({
+      coords: [[coords[0]-c, coords[1]], [coords[0]+c, coords[1]]],
+      lineWidth: 2,
+      strokeStyle: 'white',
+      project: false
+    });
+    draw.line({
+      coords: [[coords[0], coords[1]-c], [coords[0], coords[1]+c]],
+      lineWidth: 2,
+      strokeStyle: 'white',
+      project: false
+    });
+  },
+  track: function(draw, coords, radius){
+    var c = Math.sqrt(radius*radius*2)/2;
+    draw.line({
+      coords: [[coords[0]-c, coords[1]-c], [coords[0]+c, coords[1]+c]],
+      lineWidth: 2,
+      strokeStyle: 'white',
+      project: false
+    });
+    draw.line({
+      coords: [[coords[0]-c, coords[1]+c], [coords[0]+c, coords[1]-c]],
+      lineWidth: 2,
+      strokeStyle: 'white',
+      project: false
+    });
   }
 };
 
@@ -162,83 +218,89 @@ astrojs.ready(function(e){
     {dec: -31.2, ra: 127.9, err: 1.4, type: types.track}
   ];
 
+  // make a canvas
   var width = 960,
       height = 500;
+  var canvas = d3.select("body").append("canvas")
+    .attr("width", width)
+    .attr("height", height);
+  var context = canvas.node().getContext("2d");
   var coords, coords2;
   var projection = d3.geoMollweide()
       .scale(165)
       .translate([width / 2, height / 2])
       .precision(.1);
+
+  // mirror the projection so it matches official plots
   var project = function(d) {
     return projection([(d[0]-180)*-1,d[1]]);
   };
+
+  // add background
   var path = d3.geoPath()
-      .projection(projection);
+      .projection(projection)
+      .context(context);
   var graticule = d3.geoGraticule()
           .step([30, 30]);
-  var svg = d3.select("body").append("svg")
-      .attr("width", width)
-      .attr("height", height);
-  svg.append("defs").append("path")
-      .datum({type: "Sphere"})
-      .attr("id", "sphere")
-      .attr("d", path);
-  svg.append("use")
-      .attr("class", "stroke")
-      .attr("xlink:href", "#sphere");
-  svg.append("use")
-      .attr("class", "fill")
-      .attr("xlink:href", "#sphere");
-  svg.append("path")
-      .datum(graticule)
-      .attr("class", "graticule")
-      .attr("d", path);
+  context.clearRect(0,0,width,height);
+  context.beginPath();
+  path({type: "Sphere"});
+  context.lineWidth = 2;
+  context.stroke();
+  reset_styles(context);
+
+  context.beginPath();
+  path(graticule());
+  context.strokeStyle = 'grey';
+  context.setLineDash([1,6]);
+  context.stroke();
+  reset_styles(context);
+
+  var mydraw = draw(context,project);
+
   // make equator
-  coords = project([0, 0]);
-  coords2 = project([360, 0]);
-  svg.append("line")
-      .attr("class", "equator")
-      .attr("x1", coords[0])
-      .attr("y1", coords[1])
-      .attr("x2", coords2[0])
-      .attr("y2", coords2[1]);
+  mydraw.line({
+    coords: [[0,0],[360,0]],
+    wrap: false,
+    strokeStyle: "grey"
+  });
+
+  // make galactic plane
   var plane_data = [];
   for(var i=-180;i<180;i+=.1) {
     var tmp = astrojs.coordinates.galactic2equatorial(i,0);
     plane_data.push([tmp.ra, tmp.dec]);
   }  
-  var line = d3.line()
-    .curve(d3.curveCardinal)
-    .defined(function(d){
-      if (d[0] < 0.1 || d[0] > 359.9)
-        return null;
-      if (d[1] < -90 || d[1] > 90)
-        return null;
-      return d;
-    })
-    .x(function(d){ return project(d)[0]; })
-    .y(function(d){ return project(d)[1]; });
-  svg.append("path")
-    .attr("class", "galactic_plane")
-    .datum(plane_data)
-    .attr("d", line);
+  mydraw.line({
+    coords: plane_data,
+    strokeStyle: "grey"
+  });
 
+  // draw hese data
   for (var i=0;i<hese.length;i++) {
-    coords = project([hese[i].ra, hese[i].dec]);
-    svg.append("circle")
-      .attr("class", "hese")
-      .attr("cx", coords[0])
-      .attr("cy", coords[1])
-      .attr("r", 5);
+    mydraw.circle({
+      coords: [hese[i].ra, hese[i].dec],
+      radius: 6,
+      fill: true,
+      stroke: false,
+      fillStyle: "red",
+      raw: true
+    })
     if (hese[i].type != undefined && hese[i].type != null) {
-      hese[i].type(svg, coords, 5);
+      hese[i].type(mydraw, project([hese[i].ra, hese[i].dec]), 6);
     }
-    svg.append("text")
-      .attr("class", "hese_label")
-      .attr("x", coords[0]+5)
-      .attr("y", coords[1]-5)
-      .text(""+(i+1));
-    draw(svg,project).circle([hese[i].ra, hese[i].dec], hese[i].err, "hese_err");
+    mydraw.text({
+      coords: [hese[i].ra, hese[i].dec],
+      font: "16px sans-serif",
+      text: ""+(i+1)
+    });
+    if (hese[i].err > 6)
+      mydraw.circle({
+        coords: [hese[i].ra, hese[i].dec],
+        radius: hese[i].err,
+        strokeStyle: "red",
+        wrap: true
+      });
   }
 });
 </script>
